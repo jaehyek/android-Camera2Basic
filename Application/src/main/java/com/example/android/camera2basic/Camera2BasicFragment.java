@@ -141,6 +141,7 @@ public class Camera2BasicFragment extends Fragment
 
         @Override
         public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {
+            Dlog.i("");
             openCamera(width, height);
         }
 
@@ -247,6 +248,7 @@ public class Camera2BasicFragment extends Fragment
 
         @Override
         public void onImageAvailable(ImageReader reader) {
+            Dlog.i("");
             mBackgroundHandler.post(new ImageSaver(reader.acquireNextImage(), mFile));
         }
 
@@ -291,12 +293,14 @@ public class Camera2BasicFragment extends Fragment
             = new CameraCaptureSession.CaptureCallback() {
 
         private void process(CaptureResult result) {
+            Dlog.i("");
             switch (mState) {
                 case STATE_PREVIEW: {
                     // We have nothing to do when the camera preview is working normally.
                     break;
                 }
                 case STATE_WAITING_LOCK: {
+                    Dlog.i("mState=STATE_WAITING_LOCK");
                     Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
                     if (afState == null) {
                         captureStillPicture();
@@ -306,6 +310,7 @@ public class Camera2BasicFragment extends Fragment
                         Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
                         if (aeState == null ||
                                 aeState == CaptureResult.CONTROL_AE_STATE_CONVERGED) {
+                            Dlog.i("checking---aeState");
                             mState = STATE_PICTURE_TAKEN;
                             captureStillPicture();
                         } else {
@@ -315,6 +320,7 @@ public class Camera2BasicFragment extends Fragment
                     break;
                 }
                 case STATE_WAITING_PRECAPTURE: {
+                    Dlog.i("mState=STATE_WAITING_PRECAPTURE");
                     // CONTROL_AE_STATE can be null on some devices
                     Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
                     if (aeState == null ||
@@ -325,6 +331,7 @@ public class Camera2BasicFragment extends Fragment
                     break;
                 }
                 case STATE_WAITING_NON_PRECAPTURE: {
+                    Dlog.i("mState=STATE_WAITING_NON_PRECAPTURE");
                     // CONTROL_AE_STATE can be null on some devices
                     Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
                     if (aeState == null || aeState != CaptureResult.CONTROL_AE_STATE_PRECAPTURE) {
@@ -454,14 +461,14 @@ public class Camera2BasicFragment extends Fragment
     public void onViewCreated(final View view, Bundle savedInstanceState) {
         view.findViewById(R.id.picture).setOnClickListener(this);
         view.findViewById(R.id.info).setOnClickListener(this);
-        Dlog.i( "onViewCreated");
+        Dlog.i("");
         mTextureView = (AutoFitTextureView) view.findViewById(R.id.texture);
     }
 
     @Override
     public void onActivityCreated(Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
-        Dlog.i( "onActivityCreated");
+        Dlog.i("");
         mFile = new File(getActivity().getExternalFilesDir(null), "pic.jpg");
     }
 
@@ -469,6 +476,7 @@ public class Camera2BasicFragment extends Fragment
     public void onResume() {
         super.onResume();
         startBackgroundThread();
+        Dlog.i("");
 
         // When the screen is turned off and turned back on, the SurfaceTexture is already
         // available, and "onSurfaceTextureAvailable" will not be called. In that case, we can open
@@ -517,6 +525,7 @@ public class Camera2BasicFragment extends Fragment
      * @param height The height of available size for camera preview
      */
     private void setUpCameraOutputs(int width, int height) {
+        Dlog.i("");
         Activity activity = getActivity();
         CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
         try {
@@ -628,6 +637,7 @@ public class Camera2BasicFragment extends Fragment
      * Opens the camera specified by {@link Camera2BasicFragment#mCameraId}.
      */
     private void openCamera(int width, int height) {
+        Dlog.i("");
         if (ContextCompat.checkSelfPermission(getActivity(), Manifest.permission.CAMERA)
                 != PackageManager.PERMISSION_GRANTED) {
             requestCameraPermission();
@@ -678,6 +688,7 @@ public class Camera2BasicFragment extends Fragment
      * Starts a background thread and its {@link Handler}.
      */
     private void startBackgroundThread() {
+        Dlog.i("");
         mBackgroundThread = new HandlerThread("CameraBackground");
         mBackgroundThread.start();
         mBackgroundHandler = new Handler(mBackgroundThread.getLooper());
@@ -687,6 +698,7 @@ public class Camera2BasicFragment extends Fragment
      * Stops the background thread and its {@link Handler}.
      */
     private void stopBackgroundThread() {
+        Dlog.i("");
         mBackgroundThread.quitSafely();
         try {
             mBackgroundThread.join();
@@ -819,6 +831,7 @@ public class Camera2BasicFragment extends Fragment
      * we get a response in {@link #mCaptureCallback} from {@link #lockFocus()}.
      */
     private void runPrecaptureSequence() {
+        Dlog.i("");
         try {
             // This is how to tell the camera to trigger.
             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
@@ -959,6 +972,7 @@ public class Camera2BasicFragment extends Fragment
 
         @Override
         public void run() {
+            Dlog.i("");
             ByteBuffer buffer = mImage.getPlanes()[0].getBuffer();
             byte[] bytes = new byte[buffer.remaining()];
             buffer.get(bytes);
