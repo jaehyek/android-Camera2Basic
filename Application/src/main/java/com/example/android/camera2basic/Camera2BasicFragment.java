@@ -27,8 +27,10 @@ import android.content.DialogInterface;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
+import android.graphics.PixelFormat;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -174,8 +176,17 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
     private File mFile;
     private File mFile2;
 
-    private int mState = STATE_PREVIEW;
-    private int picture0_taken = 0 ;
+    private static int width = 0 ;
+    private static int height = 0 ;
+    private static int pixelStride = 0;
+    private static int rowStride = 0;
+    private static int rowPadding = 0;
+
+    private static byte[] ImageByteARGB0 ;
+    private static byte[] ImageByteARGB1 ;
+
+    private static int mState = STATE_PREVIEW;
+    private static int picture0_taken = 0 ;
 
 
     private final CameraDevice.StateCallback mDeviceStateCallback = new CameraDevice.StateCallback()
@@ -243,10 +254,16 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
         public void onImageAvailable(ImageReader reader)
         {
             Dlog.i("");
+            int format = reader.getImageFormat() ;
+            if ( format == ImageFormat.JPEG)
+                Dlog.i("format Jpeg");
+            else if (format == PixelFormat.RGBA_8888)
+                Dlog.i("pixel RGBA 8888");
+
             if (picture0_taken == 1 )
-                mBackgroundHandler.post(new ImageSaver(reader.acquireNextImage(), mFile2));
+                mBackgroundHandler.post(new ImageSaver(reader.acquireNextImage(), mFile2, format ));
             else
-                mBackgroundHandler.post(new ImageSaver(reader.acquireNextImage(), mFile));
+                mBackgroundHandler.post(new ImageSaver(reader.acquireNextImage(), mFile, format ));
 
         }
 
@@ -613,15 +630,6 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
             {
                 mCameraCharacteristics = manager.getCameraCharacteristics(cameraId);
 
-                //just test
-                float listAfLength[] = mCameraCharacteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
-//                float aa = mCameraCharacteristics.get(CameraCharacteristics.LENS_INFO_HYPERFOCAL_DISTANCE);
-//                float minFocusdist = mCameraCharacteristics.get(CameraCharacteristics.LENS_INFO_FOCUS_DISTANCE_CALIBRATION);
-//
-//                float bb = mCameraCharacteristics.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE);
-
-
-
                 // We don't use a front facing camera in this sample.
                 Integer facing = mCameraCharacteristics.get(CameraCharacteristics.LENS_FACING);
                 if (facing != null && facing == CameraCharacteristics.LENS_FACING_FRONT)
@@ -638,8 +646,7 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
 
                 // For still image captures, we use the largest available size.
                 Size largest = Collections.max(Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)), new CompareSizesByArea());
-                mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(), ImageFormat.JPEG, /*maxImages*/2);
-                mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, mBackgroundHandler);
+
 
                 // Find out if we need to swap dimension to get the preview size relative to sensor
                 // coordinate.
@@ -696,6 +703,9 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
                 // bus' bandwidth limitation, resulting in gorgeous previews but the storage of
                 // garbage capture data.
                 mPreviewSize = chooseOptimalSize(map.getOutputSizes(SurfaceTexture.class), rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth, maxPreviewHeight, largest);
+
+                mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(), PixelFormat.RGBA_8888, /*maxImages*/2);
+                mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, mBackgroundHandler);
 
                 // We fit the aspect ratio of TextureView to the size of preview we picked.
                 int orientation = getResources().getConfiguration().orientation;
@@ -968,6 +978,8 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
             // This is how to tell the camera to lock focus.
             Dlog.i("");
 
+            // refer to https://stackoverflow.com/questions/42127464/how-to-lock-focus-in-camera2-api-android
+
             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
 
             // 아래 부분을 해야,  먼 거리 초점을 맞춘다. 만일하지 않으면 원복했을 때, 원거리 초점이 돼어 버린다.
@@ -1158,54 +1170,125 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
      */
     private static class ImageSaver implements Runnable
     {
-
-        /**
-         * The JPEG image
-         */
         private final Image mImage;
-        /**
-         * The file we save the image into.
-         */
         private final File mFile;
+        private final int mImageFormat;
 
-        public ImageSaver(Image image, File file)
+        public ImageSaver(Image image, File file, int imageformat)
         {
             mImage = image;
             mFile = file;
+            mImageFormat = imageformat ;
         }
 
         @Override
         public void run()
         {
-            Dlog.i("");
-            ByteBuffer buffer = mImage.getPlanes()[0].getBuffer();
-            byte[] bytes = new byte[buffer.remaining()];
-            buffer.get(bytes);
-            FileOutputStream output = null;
-            try
+
+            if(mImageFormat == PixelFormat.RGBA_8888 )
             {
-                output = new FileOutputStream(mFile);
-                output.write(bytes);
-            }
-            catch (IOException e)
-            {
-                e.printStackTrace();
-            }
-            finally
-            {
-                mImage.close();
-                if (null != output)
+                Image.Plane[] planes = mImage.getPlanes();
+                ByteBuffer buffer = planes[0].getBuffer();
+                if (buffer == null)
                 {
-                    try
+                    return;
+                }
+                width = mImage.getWidth();
+                height = mImage.getHeight();
+                pixelStride = planes[0].getPixelStride();
+                rowStride = planes[0].getRowStride();
+                rowPadding = rowStride - pixelStride * width;
+
+                if(picture0_taken == 0 )
+                {
+                    ImageByteARGB0 = new byte[buffer.remaining()];
+                    buffer.get(ImageByteARGB0);
+                }
+                else
+                {
+                    ImageByteARGB1 = new byte[buffer.remaining()];
+                    buffer.get(ImageByteARGB1);
+                }
+
+
+                FileOutputStream fos = null;
+                Bitmap bitmap = null;
+
+                try
+                {
+//                    int offset = 0;
+//                    bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+//
+//                    for (int i = 0; i < height; ++i)
+//                    {
+//                        for (int j = 0; j < width; ++j)
+//                        {
+//                            int pixel = 0;
+//                            pixel |= (buffer.get(offset) & 0xff) << 16;     // R
+//                            pixel |= (buffer.get(offset + 1) & 0xff) << 8;  // G
+//                            pixel |= (buffer.get(offset + 2) & 0xff);       // B
+//                            pixel |= (buffer.get(offset + 3) & 0xff) << 24; // A
+//                            bitmap.setPixel(j, i, pixel);
+//                            offset += pixelStride;
+//                        }
+//                        offset += rowPadding;
+//                    }
+//                    fos = new FileOutputStream(mFile);
+//                    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos);
+
+                }
+                catch (Exception e)
+                {
+                    e.printStackTrace();
+                }
+                finally
+                {
+                    mImage.close();
+                    if (null != fos)
                     {
-                        output.close();
-                    }
-                    catch (IOException e)
-                    {
-                        e.printStackTrace();
+                        try
+                        {
+                            fos.close();
+                        }
+                        catch (IOException e)
+                        {
+                            e.printStackTrace();
+                        }
                     }
                 }
             }
+            else if (mImageFormat == ImageFormat.JPEG )
+            {
+                ByteBuffer buffer = mImage.getPlanes()[0].getBuffer();
+                byte[] bytes = new byte[buffer.remaining()];
+                buffer.get(bytes);
+                FileOutputStream output = null;
+                try
+                {
+                    output = new FileOutputStream(mFile);
+                    output.write(bytes);
+                }
+                catch (IOException e)
+                {
+                    e.printStackTrace();
+                }
+                finally
+                {
+                    mImage.close();
+                    if (null != output)
+                    {
+                        try
+                        {
+                            output.close();
+                        }
+                        catch (IOException e)
+                        {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+            }
+
         }
 
     }
