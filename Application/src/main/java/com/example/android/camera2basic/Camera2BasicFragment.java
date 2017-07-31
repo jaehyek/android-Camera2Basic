@@ -970,15 +970,26 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
 
             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
 
+            // 아래 부분을 해야,  먼 거리 초점을 맞춘다. 만일하지 않으면 원복했을 때, 원거리 초점이 돼어 버린다.
             Rect newRect = new Rect(0, 0, mPreviewSize.getWidth(), mPreviewSize.getHeight());
             MeteringRectangle[] focusArea = new MeteringRectangle[1];
             focusArea[0] = new MeteringRectangle(newRect, 500);
             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_REGIONS, focusArea);
             mPreviewRequestBuilder.set(CaptureRequest.LENS_FOCUS_DISTANCE, 0.0f);
 
-            mState = STATE_WAITING_PRELOCK;
+            //mState = STATE_WAITING_PRELOCK;
+            mPreviewCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(), null, null);
 
+
+            //----------- process 부분에서 할 것을 여기서 해 버린다.
+            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
+            mPreviewCaptureSession.capture(mPreviewRequestBuilder.build(), null, null);
+
+            //-----------
+            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
+            mState = STATE_WAITING_LOCK1;
             mPreviewCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(), mPreviewCaptureCallback, mBackgroundHandler);
+
         }
         catch (CameraAccessException e)
         {
