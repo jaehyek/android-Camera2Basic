@@ -102,43 +102,7 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
      */
     private static final String TAG = "Camera2BasicFragment";
 
-    /**
-     * Camera state: Showing camera preview.
-     */
-    private static final int STATE_PREVIEW = 0;
 
-    /**
-     * Camera state: Waiting for the focus to be locked.
-     */
-    private static final int STATE_WAITING_LOCK0 = 1;
-
-    /**
-     * Camera state: Waiting for the exposure to be precapture state.
-     */
-    private static final int STATE_WAITING_PRECAPTURE = 2;
-
-    /**
-     * Camera state: Waiting for the exposure state to be something other than precapture.
-     */
-    private static final int STATE_WAITING_NON_PRECAPTURE = 3;
-
-    /**
-     * Camera state: Picture was taken.
-     */
-    private static final int STATE_PICTURE_TAKEN = 4;
-
-    private static final int STATE_WAITING_LOCK1 = 5;
-    private static final int STATE_WAITING_PRELOCK = 6 ;
-
-    /**
-     * Max preview width that is guaranteed by Camera2 API
-     */
-    private static final int MAX_PREVIEW_WIDTH = 1920;
-
-    /**
-     * Max preview height that is guaranteed by Camera2 API
-     */
-    private static final int MAX_PREVIEW_HEIGHT = 1080;
 
 
     /**
@@ -196,10 +160,24 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
     // 목적은 처음에 시작했던 것 처럼 되돌리기 위한 것이다.
     private CaptureRequest mPreviewRequest;
 
+    private static final int STATE_PREVIEW = 0;
+    private static final int STATE_WAITING_LOCK0 = 1;
+    private static final int STATE_WAITING_PRECAPTURE = 2;
+    private static final int STATE_WAITING_NON_PRECAPTURE = 3;
+    private static final int STATE_PICTURE_TAKEN = 4;
+    private static final int STATE_WAITING_LOCK1 = 5;
+    private static final int STATE_WAITING_PRELOCK = 6 ;
 
-    /**
-     * {@link CameraDevice.StateCallback} is called when {@link CameraDevice} changes its state.
-     */
+    private static final int MAX_PREVIEW_WIDTH = 1920;
+    private static final int MAX_PREVIEW_HEIGHT = 1080;
+
+    private File mFile;
+    private File mFile2;
+
+    private int mState = STATE_PREVIEW;
+    private int picture0_taken = 0 ;
+
+
     private final CameraDevice.StateCallback mDeviceStateCallback = new CameraDevice.StateCallback()
     {
 
@@ -252,11 +230,7 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
      */
 
 
-    /**
-     * This is the output file for our picture.
-     */
-    private File mFile;
-    private File mFile2;
+
 
     /**
      * This a callback object for the {@link ImageReader}. "onImageAvailable" will be called when a
@@ -269,9 +243,10 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
         public void onImageAvailable(ImageReader reader)
         {
             Dlog.i("");
-            if (mState == STATE_WAITING_LOCK1)
+            if (picture0_taken == 1 )
                 mBackgroundHandler.post(new ImageSaver(reader.acquireNextImage(), mFile2));
-            else mBackgroundHandler.post(new ImageSaver(reader.acquireNextImage(), mFile));
+            else
+                mBackgroundHandler.post(new ImageSaver(reader.acquireNextImage(), mFile));
 
         }
 
@@ -279,12 +254,7 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
 
 
 
-    /**
-     * The current state of camera state for taking pictures.
-     *
-     * @see #mPreviewCaptureCallback
-     */
-    private int mState = STATE_PREVIEW;
+
 
     /**
      * A {@link Semaphore} to prevent the app from exiting before closing the camera.
@@ -308,26 +278,29 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
             {
                 case STATE_PREVIEW:
                 {
+                    Dlog.i("STATE_PREVIEW");
                     // We have nothing to do when the camera preview is working normally.
                     break;
                 }
                 case STATE_WAITING_PRELOCK:
                 {
+                    Dlog.i("STATE_WAITING_PRELOCK");
                     if (result.get(CaptureResult.CONTROL_AF_MODE) == CaptureResult.CONTROL_AF_MODE_AUTO)
                     {
                         Dlog.i("CONTROL_AF_MODE_AUTO");
-                        Dlog.i("LENS_FOCUS_DISTANCE_0 : " + result.get(CaptureResult.LENS_FOCUS_DISTANCE));
                         try
                         {
                             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
                             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
 
+
                             mPreviewCaptureSession.capture(mPreviewRequestBuilder.build(), null, null);
 
                             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
                             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
+
                             mPreviewCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(), mPreviewCaptureCallback, mBackgroundHandler);
-                            mState = STATE_WAITING_LOCK0;
+                            mState = STATE_WAITING_LOCK1;
 
                         }
                         catch (CameraAccessException e)
@@ -335,24 +308,33 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
                             e.printStackTrace();
                         }
                     }
+                    break;
                 }
                 case STATE_WAITING_LOCK0:
+                case STATE_WAITING_LOCK1:
                 {
+                    if(mState == STATE_WAITING_LOCK0)
+                        Dlog.i("STATE_WAITING_LOCK0");
+                    else
+                        Dlog.i("STATE_WAITING_LOCK1");
 
                     Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
                     if (afState == null)
                     {
+                        // image capture 완료하기 전에  또 다른 event가 들어 오는 것을 막기 위해 미리 상태를 바꾼다.
+                        mState = STATE_PREVIEW;
                         captureStillPicture();
                     }
                     else if (CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED == afState || CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED == afState)
                     {
-                        Dlog.i("LENS_FOCUS_DISTANCE_0 : " + result.get(CaptureResult.LENS_FOCUS_DISTANCE));
+                        // image capture 완료하기 전에  또 다른 event가 들어 오는 것을 막기 위해 미리 상태를 바꾼다.
+                        mState = STATE_PREVIEW;
+
+                        Dlog.i("STATE_FOCUSED_LOCKED");
                         // CONTROL_AE_STATE can be null on some devices
                         Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
                         if (aeState == null || aeState == CaptureResult.CONTROL_AE_STATE_CONVERGED)
                         {
-                            Dlog.i("checking---aeState");
-                            mState = STATE_PICTURE_TAKEN;
                             captureStillPicture();
                         }
                         else
@@ -380,7 +362,6 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
                     Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
                     if (aeState == null || aeState != CaptureResult.CONTROL_AE_STATE_PRECAPTURE)
                     {
-                        mState = STATE_PICTURE_TAKEN;
                         captureStillPicture();
                     }
                     break;
@@ -962,14 +943,30 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
         lockFocus0();
     }
 
-    /**
-     * Lock the focus as the first step for a still image capture.
-     */
+
     private void lockFocus0()
     {
         try
         {
+            picture0_taken = 0 ;
             // This is how to tell the camera to lock focus.
+            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_START);
+            // Tell #mPreviewCaptureCallback to wait for the lock.
+            mState = STATE_WAITING_LOCK0;
+            mPreviewCaptureSession.capture(mPreviewRequestBuilder.build(), mPreviewCaptureCallback, mBackgroundHandler);
+        }
+        catch (CameraAccessException e)
+        {
+            e.printStackTrace();
+        }
+    }
+
+    private void lockFocus1()
+    {
+        try
+        {
+            // This is how to tell the camera to lock focus.
+            Dlog.i("");
 
             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
 
@@ -989,21 +986,6 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
         }
     }
 
-    private void lockFocus1()
-    {
-        try
-        {
-            // This is how to tell the camera to lock focus.
-            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_START);
-            // Tell #mPreviewCaptureCallback to wait for the lock.
-            mState = STATE_WAITING_LOCK1;
-            mPreviewCaptureSession.capture(mPreviewRequestBuilder.build(), mPreviewCaptureCallback, mBackgroundHandler);
-        }
-        catch (CameraAccessException e)
-        {
-            e.printStackTrace();
-        }
-    }
 
 
     /**
@@ -1033,7 +1015,6 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
      */
     private void captureStillPicture()
     {
-        Dlog.i("Beginning--StillPicture_0");
         try
         {
             final Activity activity = getActivity();
@@ -1041,67 +1022,18 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
             {
                 return;
             }
+            Dlog.i("");
             // This is the CaptureRequest.Builder that we use to take a picture.
             final CaptureRequest.Builder captureBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
             captureBuilder.addTarget(mImageReader.getSurface());
-
-            captureBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF);
-
-
-            setAutoFlash(captureBuilder);
-
-            // Orientation
-            int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-            captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation));
-
-            CameraCaptureSession.CaptureCallback mCaptureStillImageCallback0 = new CameraCaptureSession.CaptureCallback()
-            {
-
-                @Override
-                public void onCaptureCompleted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull TotalCaptureResult result)
-                {
-                    long now = System.currentTimeMillis();
-                    showToast("elapsedTime : " + (now - timeprev));
-//                    showToast("Saved: " + mFile);
-                    Dlog.i("Ending--StillPicture_0");
-                    Dlog.i("LENS_FOCUS_DISTANCE_0 : " + result.get(CaptureResult.LENS_FOCUS_DISTANCE));
-
-                    unlockFocus();
-
-                }
-            };
-
-
-            mPreviewCaptureSession.stopRepeating();
-            mPreviewCaptureSession.capture(captureBuilder.build(), mCaptureStillImageCallback0, null);
-        }
-        catch (CameraAccessException e)
-        {
-            e.printStackTrace();
-        }
-    }
-
-    private void captureStillPicture_save()
-    {
-        Dlog.i("Beginning--StillPicture_0");
-        try
-        {
-            final Activity activity = getActivity();
-            if (null == activity || null == mCameraDevice)
-            {
-                return;
-            }
-            // This is the CaptureRequest.Builder that we use to take a picture.
-            final CaptureRequest.Builder captureBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
-            captureBuilder.addTarget(mImageReader.getSurface());
-
-            // Use the same AE and AF modes as the preview.
             captureBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+
             setAutoFlash(captureBuilder);
 
             // Orientation
             int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
             captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation));
+
 
             CameraCaptureSession.CaptureCallback mCaptureStillImageCallback0 = new CameraCaptureSession.CaptureCallback()
             {
@@ -1109,46 +1041,26 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
                 @Override
                 public void onCaptureCompleted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull TotalCaptureResult result)
                 {
-                    //showToast("Saved: " + mFile);
-                    Dlog.i("Ending--StillPicture_0");
-
-                    // take a second picture
-                    try
+                    if(picture0_taken == 0)
                     {
-                        Dlog.i("Beginning--StillPicture_1");
-                        // one more captureStillPicture
-                        final CaptureRequest.Builder captureBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
-                        captureBuilder.addTarget(mImageReader.getSurface());
-
-                        // Use the same AE and AF modes as the preview.
-                        //captureBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-                        captureBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
-
-                        //captureBuilder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON);
-                        captureBuilder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF);
-
-                        captureBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_START);
-
-                        captureBuilder.set(CaptureRequest.LENS_FOCUS_DISTANCE, 10.0f);
-                        setAutoFlash(captureBuilder);
-
-                        // Orientation
-                        int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-                        captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation));
-                        //CameraCaptureSession.CaptureCallback CaptureCallback = mCaptureStillImageCallback1 ;
-
-                        mPreviewCaptureSession.stopRepeating();
-                        mState = STATE_WAITING_LOCK1;
-                        //mPreviewCaptureSession.capture(captureBuilder.build(), mCaptureStillImageCallback1, null);
-                        mPreviewCaptureSession.setRepeatingRequest(captureBuilder.build(), mCaptureStillImageCallback1, mBackgroundHandler);
-
+                        picture0_taken = 1 ;
+                        Dlog.i("picture0_taken");
+                        long now = System.currentTimeMillis();
+                        showToast("elapsedTime : " + (now - timeprev));
+                        lockFocus1();
                     }
-                    catch (CameraAccessException e)
+                    else
                     {
-                        e.printStackTrace();
+                        Dlog.i("picture1_taken");
+                        picture0_taken = 0 ;
+                        long now = System.currentTimeMillis();
+                        showToast("elapsedTime : " + (now - timeprev));
+                        unlockFocus();
                     }
+
                 }
             };
+
 
             mPreviewCaptureSession.stopRepeating();
             mPreviewCaptureSession.capture(captureBuilder.build(), mCaptureStillImageCallback0, null);
@@ -1158,6 +1070,7 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
             e.printStackTrace();
         }
     }
+
 
     /**
      * Retrieves the JPEG orientation from the specified screen rotation.
@@ -1184,6 +1097,7 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
         {
             // Reset the auto-focus trigger
             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_CANCEL);
+            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
             setAutoFlash(mPreviewRequestBuilder);
             mPreviewCaptureSession.capture(mPreviewRequestBuilder.build(), mPreviewCaptureCallback, mBackgroundHandler);
             // After this, the camera will go back to the normal state of preview.
