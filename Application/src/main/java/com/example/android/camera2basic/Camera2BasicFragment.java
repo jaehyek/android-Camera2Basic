@@ -552,8 +552,7 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
     {
         super.onActivityCreated(savedInstanceState);
         Dlog.i("");
-        mFile = new File(getActivity().getExternalFilesDir(null), "pic.jpg");
-        mFile2 = new File(getActivity().getExternalFilesDir(null), "pic2.jpg");
+
     }
 
     @Override
@@ -704,8 +703,24 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
                 // garbage capture data.
                 mPreviewSize = chooseOptimalSize(map.getOutputSizes(SurfaceTexture.class), rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth, maxPreviewHeight, largest);
 
-                mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(), PixelFormat.RGBA_8888, /*maxImages*/2);
+                // G4 : PixelFormat 은 지원 안된다.  ImageFormat=JPEG, YUV_420_888
+                // G3 : PixelFormat = RGBA_8888     ImageFormat= JPEG, YUV_420_888
+
+                int supportdImageFormat = ImageFormat.YUV_420_888 ;
+                mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(), supportdImageFormat, /*maxImages*/2);
                 mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, mBackgroundHandler);
+
+                if (supportdImageFormat == ImageFormat.YUV_420_888 )
+                {
+                    mFile = new File(getActivity().getExternalFilesDir(null), "pic.yuv");
+                    mFile2 = new File(getActivity().getExternalFilesDir(null), "pic2.yuv");
+                }
+                else if ( supportdImageFormat == ImageFormat.JPEG )
+                {
+                    mFile = new File(getActivity().getExternalFilesDir(null), "pic.jpg");
+                    mFile2 = new File(getActivity().getExternalFilesDir(null), "pic2.jpg");
+                }
+
 
                 // We fit the aspect ratio of TextureView to the size of preview we picked.
                 int orientation = getResources().getConfiguration().orientation;
@@ -1235,7 +1250,7 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
 //                    }
 //                    fos = new FileOutputStream(mFile);
 //                    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos);
-
+                    
                 }
                 catch (Exception e)
                 {
@@ -1257,7 +1272,7 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
                     }
                 }
             }
-            else if (mImageFormat == ImageFormat.JPEG )
+            else if (mImageFormat == ImageFormat.JPEG || mImageFormat == ImageFormat.YUV_420_888)
             {
                 ByteBuffer buffer = mImage.getPlanes()[0].getBuffer();
                 byte[] bytes = new byte[buffer.remaining()];
@@ -1287,6 +1302,10 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
                         }
                     }
                 }
+            }
+            else
+            {
+                mImage.close();
             }
 
         }
