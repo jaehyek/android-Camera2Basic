@@ -28,6 +28,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.PixelFormat;
@@ -35,6 +36,7 @@ import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
+import android.graphics.YuvImage;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
@@ -64,6 +66,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Toast;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -176,6 +179,10 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
     private File mFile;
     private File mFile2;
 
+    private static final int mImageFormat = ImageFormat.YUV_420_888 ;
+    //private static final int mImageFormat = ImageFormat.JPEG ;
+
+
     private static int width = 0 ;
     private static int height = 0 ;
     private static int pixelStride = 0;
@@ -259,6 +266,8 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
                 Dlog.i("format Jpeg");
             else if (format == PixelFormat.RGBA_8888)
                 Dlog.i("pixel RGBA 8888");
+            else if (format == ImageFormat.YUV_420_888)
+                Dlog.i("format YUV_420_888");
 
             if (picture0_taken == 1 )
                 mBackgroundHandler.post(new ImageSaver(reader.acquireNextImage(), mFile2, format ));
@@ -706,16 +715,17 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
                 // G4 : PixelFormat 은 지원 안된다.  ImageFormat=JPEG, YUV_420_888
                 // G3 : PixelFormat = RGBA_8888     ImageFormat= JPEG, YUV_420_888
 
-                int supportdImageFormat = ImageFormat.YUV_420_888 ;
-                mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(), supportdImageFormat, /*maxImages*/2);
+
+                mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(), mImageFormat, /*maxImages*/2);
                 mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, mBackgroundHandler);
 
-                if (supportdImageFormat == ImageFormat.YUV_420_888 )
+                if (mImageFormat == ImageFormat.YUV_420_888 )
                 {
-                    mFile = new File(getActivity().getExternalFilesDir(null), "pic.yuv");
-                    mFile2 = new File(getActivity().getExternalFilesDir(null), "pic2.yuv");
+                    // 이미지 받을 때는 yuv_420, 저장할 때는  jpg으로 저장한다.
+                    mFile = new File(getActivity().getExternalFilesDir(null), "pic.jpg");
+                    mFile2 = new File(getActivity().getExternalFilesDir(null), "pic2.jpg");
                 }
-                else if ( supportdImageFormat == ImageFormat.JPEG )
+                else if ( mImageFormat == ImageFormat.JPEG )
                 {
                     mFile = new File(getActivity().getExternalFilesDir(null), "pic.jpg");
                     mFile2 = new File(getActivity().getExternalFilesDir(null), "pic2.jpg");
@@ -1070,7 +1080,9 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
 
             // Orientation
             int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-            captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation));
+            if( mImageFormat == ImageFormat.JPEG)
+                captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation));
+
 
 
             CameraCaptureSession.CaptureCallback mCaptureStillImageCallback0 = new CameraCaptureSession.CaptureCallback()
@@ -1180,9 +1192,65 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
         }
     }
 
-    /**
-     * Saves a JPEG {@link Image} into the specified {@link File}.
-     */
+    public static byte[] ConvertYUV420ToRGB(Image image)
+    {
+        ByteBuffer buffer;
+        int rowStride;
+        int pixelStride;
+        int width = image.getWidth();
+        int height = image.getHeight();
+        int offset = 0;
+
+        Image.Plane[] planes = image.getPlanes();
+        byte[] data = new byte[image.getWidth() * image.getHeight() * ImageFormat.getBitsPerPixel(ImageFormat.YUV_420_888) / 8];
+        byte[] rowData = new byte[planes[0].getRowStride()];
+
+        for (int i = 0; i < planes.length; i++)
+        {
+            buffer = planes[i].getBuffer();
+            rowStride = planes[i].getRowStride();
+            pixelStride = planes[i].getPixelStride();
+            int w = (i == 0) ? width : width / 2;
+            int h = (i == 0) ? height : height / 2;
+            for (int row = 0; row < h; row++)
+            {
+                int bytesPerPixel = ImageFormat.getBitsPerPixel(ImageFormat.YUV_420_888) / 8;
+                if (pixelStride == bytesPerPixel)
+                {
+                    int length = w * bytesPerPixel;
+                    buffer.get(data, offset, length);
+
+                    if (h - row != 1)
+                    {
+                        buffer.position(buffer.position() + rowStride - length);
+                    }
+                    offset += length;
+                }
+                else
+                {
+
+
+                    if (h - row == 1)
+                    {
+                        buffer.get(rowData, 0, width - pixelStride + 1);
+                    }
+                    else
+                    {
+                        buffer.get(rowData, 0, rowStride);
+                    }
+
+                    for (int col = 0; col < w; col++)
+                    {
+                        data[offset++] = rowData[col * pixelStride];
+                    }
+                }
+            }
+        }
+
+        return data;
+    }
+
+
     private static class ImageSaver implements Runnable
     {
         private final Image mImage;
@@ -1272,8 +1340,9 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
                     }
                 }
             }
-            else if (mImageFormat == ImageFormat.JPEG || mImageFormat == ImageFormat.YUV_420_888)
+            else if (mImageFormat == ImageFormat.JPEG )
             {
+
                 ByteBuffer buffer = mImage.getPlanes()[0].getBuffer();
                 byte[] bytes = new byte[buffer.remaining()];
                 buffer.get(bytes);
@@ -1302,6 +1371,53 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
                         }
                     }
                 }
+            }
+            else if ( mImageFormat == ImageFormat.YUV_420_888)
+            {
+                ByteArrayOutputStream outputbytes = new ByteArrayOutputStream();
+
+                ByteBuffer bufferY = mImage.getPlanes()[0].getBuffer();
+                byte[] data0 = new byte[bufferY.remaining()];
+                bufferY.get(data0);
+
+                ByteBuffer bufferU = mImage.getPlanes()[1].getBuffer();
+                byte[] data1 = new byte[bufferU.remaining()];
+                bufferU.get(data1);
+
+                ByteBuffer bufferV = mImage.getPlanes()[2].getBuffer();
+                byte[] data2 = new byte[bufferV.remaining()];
+                bufferV.get(data2);
+
+                try
+                {
+                    outputbytes.write(data0);
+                    outputbytes.write(data2);
+                    outputbytes.write(data1);
+
+//                    for (int i = 0; i < data1.length; i++)
+//                    {
+//                        outputbytes.write(data2[i]);
+//                        outputbytes.write(data1[i]);
+//                    }
+                    final YuvImage yuvImage = new YuvImage(outputbytes.toByteArray(), ImageFormat.NV21, mImage.getWidth(),mImage.getHeight(), null);
+                    ByteArrayOutputStream outBitmap = new ByteArrayOutputStream();
+
+                    yuvImage.compressToJpeg(new Rect(0, 0,mImage.getWidth(), mImage.getHeight()), 95, outBitmap);
+
+
+                    FileOutputStream outputfile = null;
+                    outputfile = new FileOutputStream(mFile);
+                    outputfile.write(outBitmap.toByteArray());
+                }
+                catch (IOException e)
+                {
+                    e.printStackTrace();
+                }
+                finally
+                {
+                    mImage.close();
+                }
+
             }
             else
             {
