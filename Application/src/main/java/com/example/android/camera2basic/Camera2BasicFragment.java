@@ -180,14 +180,8 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
     private File mFile2;
 
     private static final int mImageFormat = ImageFormat.YUV_420_888 ;
-    //private static final int mImageFormat = ImageFormat.JPEG ;
+//    private static final int mImageFormat = ImageFormat.JPEG ;
 
-
-    private static int width = 0 ;
-    private static int height = 0 ;
-    private static int pixelStride = 0;
-    private static int rowStride = 0;
-    private static int rowPadding = 0;
 
     private static byte[] ImageByteARGB0 ;
     private static byte[] ImageByteARGB1 ;
@@ -716,21 +710,24 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
                 // G3 : PixelFormat = RGBA_8888     ImageFormat= JPEG, YUV_420_888
 
 
-                mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(), mImageFormat, /*maxImages*/2);
-                mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, mBackgroundHandler);
+
+
 
                 if (mImageFormat == ImageFormat.YUV_420_888 )
                 {
+                    // 이 이미지는 회전하지 않는다.
+                    mImageReader = ImageReader.newInstance(mPreviewSize.getHeight(), mPreviewSize.getWidth(), mImageFormat, /*maxImages*/2);
                     // 이미지 받을 때는 yuv_420, 저장할 때는  jpg으로 저장한다.
                     mFile = new File(getActivity().getExternalFilesDir(null), "pic.jpg");
                     mFile2 = new File(getActivity().getExternalFilesDir(null), "pic2.jpg");
                 }
                 else if ( mImageFormat == ImageFormat.JPEG )
                 {
+                    mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(), mImageFormat, /*maxImages*/2);
                     mFile = new File(getActivity().getExternalFilesDir(null), "pic.jpg");
                     mFile2 = new File(getActivity().getExternalFilesDir(null), "pic2.jpg");
                 }
-
+                mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, mBackgroundHandler);
 
                 // We fit the aspect ratio of TextureView to the size of preview we picked.
                 int orientation = getResources().getConfiguration().orientation;
@@ -1080,7 +1077,7 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
 
             // Orientation
             int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-            if( mImageFormat == ImageFormat.JPEG)
+//            if( mImageFormat == ImageFormat.JPEG)
                 captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation));
 
 
@@ -1192,70 +1189,18 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
         }
     }
 
-    public static byte[] ConvertYUV420ToRGB(Image image)
-    {
-        ByteBuffer buffer;
-        int rowStride;
-        int pixelStride;
-        int width = image.getWidth();
-        int height = image.getHeight();
-        int offset = 0;
-
-        Image.Plane[] planes = image.getPlanes();
-        byte[] data = new byte[image.getWidth() * image.getHeight() * ImageFormat.getBitsPerPixel(ImageFormat.YUV_420_888) / 8];
-        byte[] rowData = new byte[planes[0].getRowStride()];
-
-        for (int i = 0; i < planes.length; i++)
-        {
-            buffer = planes[i].getBuffer();
-            rowStride = planes[i].getRowStride();
-            pixelStride = planes[i].getPixelStride();
-            int w = (i == 0) ? width : width / 2;
-            int h = (i == 0) ? height : height / 2;
-            for (int row = 0; row < h; row++)
-            {
-                int bytesPerPixel = ImageFormat.getBitsPerPixel(ImageFormat.YUV_420_888) / 8;
-                if (pixelStride == bytesPerPixel)
-                {
-                    int length = w * bytesPerPixel;
-                    buffer.get(data, offset, length);
-
-                    if (h - row != 1)
-                    {
-                        buffer.position(buffer.position() + rowStride - length);
-                    }
-                    offset += length;
-                }
-                else
-                {
-
-
-                    if (h - row == 1)
-                    {
-                        buffer.get(rowData, 0, width - pixelStride + 1);
-                    }
-                    else
-                    {
-                        buffer.get(rowData, 0, rowStride);
-                    }
-
-                    for (int col = 0; col < w; col++)
-                    {
-                        data[offset++] = rowData[col * pixelStride];
-                    }
-                }
-            }
-        }
-
-        return data;
-    }
-
 
     private static class ImageSaver implements Runnable
     {
         private final Image mImage;
         private final File mFile;
         private final int mImageFormat;
+
+        private int mWidth = 0 ;
+        private int mHeight = 0 ;
+        private int mPixelStride = 0;
+        private int mRowStride = 0;
+        private int mRowPadding = 0;
 
         public ImageSaver(Image image, File file, int imageformat)
         {
@@ -1267,38 +1212,39 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
         @Override
         public void run()
         {
+            Image.Plane[] planes = mImage.getPlanes();
+            ByteBuffer buffer = planes[0].getBuffer();
 
-            if(mImageFormat == PixelFormat.RGBA_8888 )
+            mWidth = mImage.getWidth();
+            mHeight = mImage.getHeight();
+            mPixelStride = planes[0].getPixelStride();
+            mRowStride = planes[0].getRowStride();
+            mRowPadding = mRowStride - mPixelStride * mWidth;
+
+            FileOutputStream fos = null;
+            Bitmap bitmap = null;
+
+            try
             {
-                Image.Plane[] planes = mImage.getPlanes();
-                ByteBuffer buffer = planes[0].getBuffer();
-                if (buffer == null)
-                {
-                    return;
-                }
-                width = mImage.getWidth();
-                height = mImage.getHeight();
-                pixelStride = planes[0].getPixelStride();
-                rowStride = planes[0].getRowStride();
-                rowPadding = rowStride - pixelStride * width;
 
-                if(picture0_taken == 0 )
+                if (mImageFormat == PixelFormat.RGBA_8888)
                 {
-                    ImageByteARGB0 = new byte[buffer.remaining()];
-                    buffer.get(ImageByteARGB0);
-                }
-                else
-                {
-                    ImageByteARGB1 = new byte[buffer.remaining()];
-                    buffer.get(ImageByteARGB1);
-                }
+                    if (buffer == null)
+                    {
+                        return;
+                    }
 
+                    if (picture0_taken == 0)
+                    {
+                        ImageByteARGB0 = new byte[buffer.remaining()];
+                        buffer.get(ImageByteARGB0);
+                    }
+                    else
+                    {
+                        ImageByteARGB1 = new byte[buffer.remaining()];
+                        buffer.get(ImageByteARGB1);
+                    }
 
-                FileOutputStream fos = null;
-                Bitmap bitmap = null;
-
-                try
-                {
 //                    int offset = 0;
 //                    bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
 //
@@ -1318,110 +1264,114 @@ public class Camera2BasicFragment extends Fragment implements View.OnClickListen
 //                    }
 //                    fos = new FileOutputStream(mFile);
 //                    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos);
-                    
+
+
                 }
-                catch (Exception e)
+                else if (mImageFormat == ImageFormat.JPEG)
                 {
-                    e.printStackTrace();
+                    byte[] bytes = new byte[buffer.remaining()];
+                    buffer.get(bytes);
+
+                    fos = new FileOutputStream(mFile);
+                    fos.write(bytes);
+
                 }
-                finally
+                else if (mImageFormat == ImageFormat.YUV_420_888)
                 {
-                    mImage.close();
-                    if (null != fos)
+                    //ByteArrayOutputStream outputbytes = new ByteArrayOutputStream();
+
+                    ByteBuffer bufferY = mImage.getPlanes()[0].getBuffer();
+                    byte[] Y1 = new byte[bufferY.remaining()];
+                    bufferY.get(Y1);
+
+
+                    ByteBuffer bufferU = mImage.getPlanes()[1].getBuffer();
+                    byte[] U1 = new byte[bufferU.remaining()];
+                    bufferU.get(U1);
+
+                    ByteBuffer bufferV = mImage.getPlanes()[2].getBuffer();
+                    byte[] V1 = new byte[bufferV.remaining()];
+                    bufferV.get(V1);
+
+                    //-----------------------------------------------------------------------
+                    // 만일 NV21 format으로 만들어서  jpeg으로 전환할 때, 아래를 사용한다.
+                    //outputbytes.write(Y1);
+                    //outputbytes.write(V1);
+                    //outputbytes.write(U1);
+
+                    //final YuvImage yuvImage = new YuvImage(outputbytes.toByteArray(), ImageFormat.NV21, mImage.getWidth(),mImage.getHeight(), null);
+                    //ByteArrayOutputStream outBitmap = new ByteArrayOutputStream();
+                    //yuvImage.compressToJpeg(new Rect(0, 0,mImage.getWidth(), mImage.getHeight()), 95, outBitmap);
+                    //FileOutputStream outputfile = null;
+                    //outputfile = new FileOutputStream(mFile);
+                    //outputfile.write(outBitmap.toByteArray());
+
+                    //-----------------------------------------------------------------------
+                    // 만일 YUV_420을  ARGB_8888 으로 변환하고 싶으면, 아래를 사용한다.
+
+                    int pixelstrideY = mImage.getPlanes()[0].getPixelStride();
+                    int pixelstrideU = mImage.getPlanes()[1].getPixelStride();
+                    int pixelstrideV = mImage.getPlanes()[2].getPixelStride();
+
+                    int rowstrideY = mImage.getPlanes()[0].getRowStride();
+                    int rowstrideU = mImage.getPlanes()[1].getRowStride();
+                    int rowstrideV = mImage.getPlanes()[2].getRowStride();
+
+
+
+                    bitmap = Bitmap.createBitmap(mHeight, mWidth, Bitmap.Config.ARGB_8888);
+
+                    Dlog.i("mHeight " + mHeight );
+                    Dlog.i("mWidth " + mWidth );
+                    for (int i = 0; i < mWidth ; i++)
                     {
-                        try
+                        for (int j = 0; j < mHeight; j++)
                         {
-                            fos.close();
-                        }
-                        catch (IOException e)
-                        {
-                            e.printStackTrace();
+                            int Y, U, V ;
+
+                            Y = Y1[i * pixelstrideY + j*rowstrideY] & 0xFF;
+                            U = U1[(i / 2) * (pixelstrideU) + (j / 2) * rowstrideU ] & 0xFF;
+                            V = V1[(i / 2) * (pixelstrideV) + (j / 2) * rowstrideV ] & 0xFF;
+
+
+                            U = U - 128;
+                            V = V - 128;
+
+                            int R = 0, G =0 , B=0;
+
+                            R = (int) (Y + 1.4075  * V);
+                            G = (int) (Y - 0.3455  * U - 0.7169  * V);
+                            B = (int) (Y + 1.7790  * U);
+
+                            if (R > 255) R = 255;
+                            else if (R < 0) R = 0;
+
+                            if (G > 255) G = 255;
+                            else if (G < 0) G = 0;
+
+                            if (B > 255) R = 255;
+                            else if (B < 0) B = 0;
+
+                            int pixel = 0;
+                            pixel |= R << 16;     // R
+                            pixel |= G << 8;  // G
+                            pixel |= B;       // B
+                            pixel |= 0xff << 24; // A
+                            bitmap.setPixel(j, i, pixel);
                         }
                     }
+                    fos = new FileOutputStream(mFile);
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos);
+
                 }
-            }
-            else if (mImageFormat == ImageFormat.JPEG )
-            {
-
-                ByteBuffer buffer = mImage.getPlanes()[0].getBuffer();
-                byte[] bytes = new byte[buffer.remaining()];
-                buffer.get(bytes);
-                FileOutputStream output = null;
-                try
-                {
-                    output = new FileOutputStream(mFile);
-                    output.write(bytes);
-                }
-                catch (IOException e)
-                {
-                    e.printStackTrace();
-                }
-                finally
-                {
-                    mImage.close();
-                    if (null != output)
-                    {
-                        try
-                        {
-                            output.close();
-                        }
-                        catch (IOException e)
-                        {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-            }
-            else if ( mImageFormat == ImageFormat.YUV_420_888)
-            {
-                ByteArrayOutputStream outputbytes = new ByteArrayOutputStream();
-
-                ByteBuffer bufferY = mImage.getPlanes()[0].getBuffer();
-                byte[] data0 = new byte[bufferY.remaining()];
-                bufferY.get(data0);
-
-                ByteBuffer bufferU = mImage.getPlanes()[1].getBuffer();
-                byte[] data1 = new byte[bufferU.remaining()];
-                bufferU.get(data1);
-
-                ByteBuffer bufferV = mImage.getPlanes()[2].getBuffer();
-                byte[] data2 = new byte[bufferV.remaining()];
-                bufferV.get(data2);
-
-                try
-                {
-                    outputbytes.write(data0);
-                    outputbytes.write(data2);
-                    outputbytes.write(data1);
-
-//                    for (int i = 0; i < data1.length; i++)
-//                    {
-//                        outputbytes.write(data2[i]);
-//                        outputbytes.write(data1[i]);
-//                    }
-                    final YuvImage yuvImage = new YuvImage(outputbytes.toByteArray(), ImageFormat.NV21, mImage.getWidth(),mImage.getHeight(), null);
-                    ByteArrayOutputStream outBitmap = new ByteArrayOutputStream();
-
-                    yuvImage.compressToJpeg(new Rect(0, 0,mImage.getWidth(), mImage.getHeight()), 95, outBitmap);
-
-
-                    FileOutputStream outputfile = null;
-                    outputfile = new FileOutputStream(mFile);
-                    outputfile.write(outBitmap.toByteArray());
-                }
-                catch (IOException e)
-                {
-                    e.printStackTrace();
-                }
-                finally
-                {
-                    mImage.close();
-                }
-
-            }
-            else
-            {
                 mImage.close();
+                if (null != fos)
+                        fos.close();
+
+            }
+            catch (IOException e)
+            {
+                e.printStackTrace();
             }
 
         }
